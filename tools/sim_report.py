@@ -18,8 +18,118 @@ FIELDS = [
     "Case", "Map", "CandidateSide", "Role", "Checkpoint", "Round", "Side",
     "Team", "JavaPackage", "Package", "Seed", "DeliveredCheese", "ReserveCheese", "Kings", "BabyRats",
     "CatDamage", "Cooperation", "Winner", "WinType", "FinalRound",
-    "LastKingAliveRound",
+    "LastKingAliveRound", "BytecodeStatus", "BytecodeCSV",
 ]
+BYTECODE_TYPES = (("BabyRat", "Baby Rat"), ("RatKing", "Rat King"))
+BYTECODE_COUNTERS = ("Turns", "BytecodesTotal", "BytecodesMax", "BytecodeLimit", "BudgetHits")
+FIELDS += [prefix + counter for prefix, _ in BYTECODE_TYPES for counter in BYTECODE_COUNTERS]
+
+
+def _bytecode_values(row: dict, prefix: str) -> tuple[dict | None, str]:
+    """Validate cumulative counters without inventing zeros for older readers."""
+    raw = {key: row.get(prefix + key) for key in BYTECODE_COUNTERS}
+    missing = [value is None or value == "" for value in raw.values()]
+    status = str(row.get("BytecodeStatus", ""))
+    if status and status != "AVAILABLE":
+        return None, "unavailable"
+    if all(missing):
+        return None, "invalid" if status == "AVAILABLE" else "missing"
+    if any(missing) or status != "AVAILABLE":
+        return None, "invalid"
+    if any(isinstance(value, bool) or not re.fullmatch(r"[0-9]+", str(value))
+           for value in raw.values()):
+        return None, "invalid"
+    values = {key: int(value) for key, value in raw.items()}
+    turns, total, peak, limit, hits = (values[key] for key in BYTECODE_COUNTERS)
+    if (limit <= 0 or hits > turns or peak > total or total > turns * peak
+            or (not turns and (total or peak or hits))
+            or bool(hits) != (peak >= limit)
+            or (hits and total < peak + (hits - 1) * limit)
+            or total > hits * peak + (turns - hits) * min(peak, limit - 1)):
+        return None, "invalid"
+    return values, "valid"
+
+
+def _bytecodes(final: list[tuple[dict, dict]]) -> list[dict]:
+    """Use FINAL once per match and retain matched measurement coverage by type."""
+    result = []
+    for prefix, label in BYTECODE_TYPES:
+        valid = []
+        missing = invalid = 0
+        for pair in final:
+            checked = [_bytecode_values(row, prefix) for row in pair]
+            statuses = {status for _, status in checked}
+            if "invalid" in statuses:
+                invalid += 1
+            elif "missing" in statuses or "unavailable" in statuses:
+                missing += 1
+            elif checked[0][0]["BytecodeLimit"] != checked[1][0]["BytecodeLimit"]:
+                invalid += 1
+            else:
+                valid.append([values for values, _ in checked])
+        limits = {pair[0]["BytecodeLimit"] for pair in valid}
+        # An aggregate percentage has no single meaning across changed budgets.
+        conflicting = len(limits) > 1
+        if conflicting:
+            invalid += len(valid)
+            valid = []
+        for index, role in enumerate(("candidate", "baseline")):
+            samples = [pair[index] for pair in valid]
+            result.append(dict(
+                role=role, unit=label, measured=len(valid), expected=len(final),
+                missing=missing, invalid=invalid, conflicting=conflicting,
+                turns=sum(value["Turns"] for value in samples),
+                total=sum(value["BytecodesTotal"] for value in samples),
+                peak=max((value["BytecodesMax"] for value in samples), default=0),
+                limit=samples[0]["BytecodeLimit"] if samples else None,
+                hits=sum(value["BudgetHits"] for value in samples)))
+    return result
+
+
+def _bytecode_reasons(final: list[tuple[dict, dict]]) -> Counter:
+    reasons = Counter()
+    for pair in final:
+        for reason in {str(row.get("BytecodeStatus", "")) for row in pair} - {"", "AVAILABLE"}:
+            reasons[reason] += 1
+    return reasons
+
+
+def _bytecode_cells(value: dict) -> list[str]:
+    identity = [value["role"].title(), value["unit"], f"{value['measured']}/{value['expected']}"]
+    if not value["measured"]:
+        return identity + ["unavailable"] * 7
+    turns, limit = value["turns"], value["limit"]
+    if not turns:
+        return identity + ["0", "n/a (no robot turns)", "n/a", f"{limit:,}", "n/a", "n/a", "n/a"]
+    average = value["total"] / turns
+    return identity + [f"{turns:,}", f"{average:,.1f}", f"{value['peak']:,}", f"{limit:,}",
+                       f"{average / limit * 100:.1f}%", f"{value['peak'] / limit * 100:.1f}%",
+                       f"{value['hits']:,} ({value['hits'] / turns * 100:.1f}%)"]
+
+
+def _bytecode_lines(final: list[tuple[dict, dict]]) -> list[str]:
+    metrics = _bytecodes(final)
+    lines = ["## Executed bytecodes per robot turn", "",
+             "Full-match measurements use complete FINAL pairs only, including startup. "
+             "Averages are robot-turn weighted: total executed bytecodes divided by recorded robot turns; "
+             "peaks are individual robot turns. These are engine replay counters, not Java file sizes.", "",
+             "| Role | Unit | Measured pairs | Robot turns | Average / turn | Peak / turn | Turn budget | Average budget | Peak budget | Budget reached turns |",
+             "| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |"]
+    lines.extend("| " + " | ".join(_bytecode_cells(value)) + " |" for value in metrics)
+    lines.extend(["", "Measurement coverage requires valid counters and the same recorded engine budget for both roles in each pair. "
+                  "Missing or invalid measurements are excluded from both roles; unavailable does not mean zero usage.", ""])
+    for value in metrics[::2]:
+        if value["missing"] or value["invalid"]:
+            note = " (conflicting engine budgets)" if value["conflicting"] else ""
+            lines.append(f"{value['unit']} excluded pairs: {value['missing']} missing or unavailable, {value['invalid']} invalid{note}.")
+    for reason, count in sorted(_bytecode_reasons(final).items()):
+        lines.append(f"Unavailable replay measurements ({count} complete pairs): {_escape(reason)}.")
+    lines.extend(["", "Budget reached counts recorded turns at or above the engine budget; it does not prove a forced yield. "
+                  "Bytecode counters in [results.csv](results.csv) are cumulative through each checkpoint; "
+                  "adding checkpoint rows would count turns repeatedly. Per-case `*-bytecodes.csv` files retain individual turn measurements.", ""])
+    lines.extend(["When the replay cannot support reliable turn measurements, its bytecode CSV contains only a header "
+                  "and the reason is reported above.", ""])
+    return lines
 
 
 def _number(row: dict, key: str) -> int:
@@ -171,6 +281,10 @@ def _case_links(output: Path, manifest: dict, row: dict) -> str:
         if not value and (output / (case + "." + suffix)).is_file():
             value = case + "." + suffix
         links.append(_file_link(output, value, key))
+    bytecodes = row.get("BytecodeCSV") or metadata.get("bytecodes")
+    if bytecodes:
+        label = "bytecodes" if row.get("BytecodeStatus") == "AVAILABLE" else "bytecodes (header only)"
+        links.append(_file_link(output, bytecodes, label))
     return " / ".join(links)
 
 
@@ -197,6 +311,13 @@ def print_summary(rows: list[dict], expected_cases: int) -> None:
     wins = summary["wins"]
     print(f"Wins: candidate {wins['candidate']}, baseline {wins['baseline']}, "
           f"unknown {wins['unknown']}. See summary.md for end rounds and win reasons.")
+    for value in _bytecodes(summary["final"]):
+        cells = _bytecode_cells(value)
+        print(f"Bytecodes {cells[0]} / {cells[1]}: {cells[2]} measured pairs; "
+              f"{cells[3]} robot turns; average {cells[4]} ({cells[7]} of budget), "
+              f"peak {cells[5]} ({cells[8]} of budget); budget reached {cells[9]}.")
+    for reason, count in sorted(_bytecode_reasons(summary["final"]).items()):
+        print(f"Bytecodes unavailable for {count} complete pairs: {reason}.")
 
 
 def _write_pr_summary(output: Path, rows: list[dict], manifest: dict, summary: dict) -> None:
@@ -231,6 +352,7 @@ def _write_pr_summary(output: Path, rows: list[dict], manifest: dict, summary: d
         lines.append(f"| {label} | {len(pairs)}/{expected} | {candidate:,} | {baseline:,} | {_change(candidate, baseline)} |")
     lines.extend(["", "Delivered cheese is not the engine's match points. Final totals use actual end rounds; "
                   "fixed round 1000 excludes earlier endings. A zero baseline has no defined percentage change.", ""])
+    lines.extend(_bytecode_lines(final))
     wins = summary["wins"]
     reasons = defaultdict(Counter)
     for pair in final:
@@ -330,6 +452,7 @@ def write_report(output: Path, rows: list[dict], manifest: dict, expected_cases:
                   "Strict round 1000 includes only matches with a recorded round 1000. "
                   "The common checkpoint uses round 1000 or the earlier match end, so it mixes times and is not a fixed-round comparison. "
                   "A zero baseline has no defined percentage change, including when both totals are zero.", ""])
+    lines.extend(_bytecode_lines(final))
 
     wins = summary["wins"]
     candidate_wins = f"{wins['candidate']}/{complete}" if complete else "n/a (no completed pairs)"
@@ -374,7 +497,7 @@ def write_report(output: Path, rows: list[dict], manifest: dict, expected_cases:
                      f"{_change(candidate, baseline)} | {_wins(pairs)['candidate']}/{len(pairs)} |")
 
     lines.extend(["", "## Completed cases", "",
-                  "| Case | Candidate side | End round | Winner | Win reason | Delivered candidate / baseline | Replay / log |",
+                  "| Case | Candidate side | End round | Winner | Win reason | Delivered candidate / baseline | Replay / log / bytecodes |",
                   "| --- | --- | ---: | --- | --- | ---: | --- |"])
     for pair in final:
         row = pair[0]

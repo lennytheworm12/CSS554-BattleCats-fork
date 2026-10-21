@@ -152,6 +152,52 @@ Final totals can reflect different match durations; strict round 1,000 results
 include only matches that reach that round. Failed or interrupted runs retain
 completed cases and are labeled incomplete/failed rather than a successful suite.
 
+### Bytecodes per robot turn
+
+Every `sim` run also measures executed **bytecodes**, the engine's computation
+counter. These are unrelated to Java file size or memory bytes. No extra flag
+or bot logging is needed:
+
+```powershell
+.\gradlew.bat sim -PsimCandidate=HEAD
+```
+
+Open `summary.md` for average and peak usage, average and peak percentage of
+the turn budget, and turns that reached the budget, separately for Baby Rats
+and Rat Kings on both bots. The average is total bytecodes divided by total
+robot turns across completed, matched cases, including startup. It is not an
+average of map averages. Results describe the selected matches; they do not
+establish a worst-case upper bound for the bot.
+
+The reader takes usage from the engine replay's `Turn.bytecodesUsed` and limits
+from its robot metadata: engine 1.2.6 gives Baby Rats **17,500** and Rat Kings
+**20,000** bytecodes per turn. A promotion turn belongs to the type and budget
+at the start of that turn. A recorded count can reach or exceed the budget;
+the count alone does not prove that a forced yield occurred.
+
+Each case saves `*-bytecodes.csv` with the round, robot ID, side, candidate or
+baseline role, unit type, usage, and budget for every measured robot turn.
+`results.csv` contains cumulative counters at each checkpoint; `pr-summary.md`
+includes the final measurement table. Bytecode data never changes match scores.
+
+Engine 1.2.6 can write extra replay turn records when rats are carried or thrown.
+If the reader cannot attribute records safely (including duplicate robot IDs
+within a round), it marks bytecodes **unavailable for that match**, records the
+reason, and leaves its bytecode CSV with only a header. Delivery and outcome
+results remain usable. Unavailable data is excluded with coverage shown in the
+report; it is never treated as zero usage.
+
+For per-method investigation in the graphical client, the original run task
+also supports the engine profiler:
+
+```powershell
+.\gradlew.bat run -PenableProfiler=true
+```
+
+Open that run's `.bc26` replay in the Battlecode client to inspect method costs.
+The simulation comparison leaves this optional profiler off and reads the
+engine's turn counters without adding instrumentation to the bot sources.
+
 ### Edit, run, inspect, repeat
 
 1. Edit and save files under `src/battlecats/`, or select your own package with

@@ -241,9 +241,10 @@ def read_match(output: Path, case: dict, java: Path, engine: Path, reader: Path,
     if re.search(r"(?m)^\[[AB]: #[^\]]+\]\s+(?:[\w$]+\.)*[\w$]*(?:Exception|Error)(?::|$)", log):
         raise RuntimeError(f"Robot exception; inspect {output / case['log']}")
     metrics = output / (case["case"] + "-engine.csv")
+    bytecodes = case.get("bytecodes", case["case"] + "-bytecodes.csv")
     command([str(java), "-cp", os.pathsep.join([str(reader), str(engine)]),
              "SimulationReplayMetrics", str(output / case["replay"]), str(metrics),
-             "100,250,500,1000", case["side"]])
+             "100,250,500,1000", case["side"], str(output / bytecodes)])
     with metrics.open(encoding="utf-8", newline="") as handle:
         snapshots = list(csv.DictReader(handle))
     finals = [row for row in snapshots if row["Checkpoint"] == "FINAL"]
@@ -261,7 +262,8 @@ def read_match(output: Path, case: dict, java: Path, engine: Path, reader: Path,
         if snapshot["Team"] != role or snapshot["Winner"] not in ("candidate", "baseline"):
             raise RuntimeError("Replay team identity mismatch")
         rows.append(dict(Case=case["case"], Map=case["map"], CandidateSide=case["side"],
-                         Role=role, JavaPackage=packages[role], Replay=case["replay"], Log=case["log"], **snapshot))
+                         Role=role, JavaPackage=packages[role], Replay=case["replay"], Log=case["log"],
+                         BytecodeCSV=bytecodes, **snapshot))
     return rows
 
 
@@ -316,7 +318,8 @@ def main() -> int:
     output.mkdir(parents=True)
     (output / "maps").mkdir()
     cases = [dict(case=f"{name}-{side}", map=name, side=side,
-                  replay=f"{name}-{side}.bc26", log=f"{name}-{side}.log")
+                  replay=f"{name}-{side}.bc26", log=f"{name}-{side}.log",
+                  bytecodes=f"{name}-{side}-bytecodes.csv")
              for name in maps for side in ("A", "B")]
     manifest = {
         "status": "RUNNING", "created_utc": datetime.now(timezone.utc).isoformat(),
@@ -333,6 +336,12 @@ def main() -> int:
         "packages": packages, "preset": args.preset if args.maps is None else "custom",
         "maps": maps, "cases": cases, "engine_version": "1.2.6", "engine_sha256": sha_file(engine),
         "engine_jar": str(engine), "java_home": str(jdk), "offline": args.offline,
+        "bytecode_measurement": {
+            "source": "replay Turn.bytecodesUsed; budgets from GameHeader.robotTypeMetadata",
+            "scope": "cumulative executed robot turns, including startup; split by start-of-turn type",
+            "ambiguity_policy": "unavailable for the match if replay turns cannot be attributed safely",
+            "method_profiler_enabled": False,
+        },
         "java_version": command([str(jdk / "bin" / ("java.exe" if os.name == "nt" else "java")), "-version"]).stderr.decode(errors="replace").strip(),
         "map_hashes": {}, "runner_hashes": {},
     }
@@ -376,7 +385,8 @@ def main() -> int:
                 raise RuntimeError(f"Match failed: {case['case']}; inspect {output / case['log']}")
             case_rows = read_match(output, case, java, engine, reader, packages)
             rows.extend(case_rows)
-            case.update(log_sha256=sha_file(output / case["log"]), replay_sha256=sha_file(output / case["replay"]))
+            case.update(log_sha256=sha_file(output / case["log"]), replay_sha256=sha_file(output / case["replay"]),
+                        bytecodes_sha256=sha_file(output / case["bytecodes"]))
             final = {row["Role"]: row for row in case_rows if row["Checkpoint"] == "FINAL"}
             ours, main_bot = final["candidate"], final["baseline"]
             print(f"[{index}/{len(cases)}] {case['case']}: delivered {ours['DeliveredCheese']} / {main_bot['DeliveredCheese']}; "
