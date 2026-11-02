@@ -24,8 +24,7 @@ public class RatKing {
                 }
             }
         }
-        rc.writeSharedArray(0,rc.getLocation().x);
-        rc.writeSharedArray(1,rc.getLocation().y);
+        KingSignal.publish(rc);
     }
 
     private void avoidEnemyThreats(RobotController rc) throws GameActionException {

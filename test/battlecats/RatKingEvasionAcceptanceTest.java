@@ -14,6 +14,18 @@ public class RatKingEvasionAcceptanceTest {
     private static final MapLocation ALLY_FAR = new MapLocation(15, 15);
 
   @Test
+  public void publishesItsFinalLocationAfterEvadingACat() throws Exception {
+    World world = world(robot(UnitType.CAT, CAT_WEST, Team.NEUTRAL));
+
+    new RatKing().takeTurn(world.rc);
+
+    assertEquals(1, world.moves);
+    assertEquals(world.location.x, world.shared[0]);
+    assertEquals(world.location.y, world.shared[1]);
+    assertEquals("Round 100 is published in two-round bucket 51", 51, world.shared[2]);
+  }
+
+  @Test
   public void neutralCatTriggersTheExistingEvasionPolicy() throws Exception {
     World world = world(robot(UnitType.CAT, CAT_WEST, Team.NEUTRAL));
 
@@ -130,12 +142,14 @@ public class RatKingEvasionAcceptanceTest {
         final List<RobotInfo> robots = new ArrayList<>();
         MapLocation location = KING;
         int moves;
+        final int[] shared = new int[GameConstants.SHARED_ARRAY_SIZE];
         World() { rc = (RobotController) Proxy.newProxyInstance(RobotController.class.getClassLoader(), new Class<?>[]{RobotController.class}, this); }
         public Object invoke(Object proxy, Method method, Object[] args) {
             switch (method.getName()) {
                 case "getLocation": return location;
                 case "getTeam": return Team.A;
                 case "getType": return UnitType.RAT_KING;
+                case "getRoundNum": return 100;
                 case "getAllCheese": case "getCurrentRatCost": return 0;
                 case "senseNearbyRobots": {
                     Team requested = args != null && args.length > 1 ? (Team) args[1] : null;
@@ -143,7 +157,8 @@ public class RatKingEvasionAcceptanceTest {
                 }
                 case "canMove": return true;
                 case "move": location = location.add((Direction) args[0]); moves++; return null;
-                case "setIndicatorString": case "writeSharedArray": return null;
+                case "writeSharedArray": shared[(Integer) args[0]] = (Integer) args[1]; return null;
+                case "setIndicatorString": return null;
                 default: return method.getReturnType() == boolean.class ? false : method.getReturnType() == int.class ? 0 : null;
             }
         }

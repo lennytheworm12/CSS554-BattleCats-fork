@@ -13,6 +13,91 @@ import static org.junit.Assert.*;
 /** Behavioral scenarios; the controller exposes only the engine's real vision cone. */
 public class CollectorTest {
   @Test
+  public void stalePublicationRetainsAPreviouslyKnownRemoteHome() throws Exception {
+    World world = new World(at(16, 5), Direction.EAST);
+    world.shared[0] = 4;
+    world.shared[1] = 5;
+    world.shared[2] = 1;
+    world.rawCheese = 20;
+    BabyRat baby = new BabyRat(world.id);
+    world.takeTurn(baby);
+    world.round = 10;
+    world.shared[1] = 12;
+
+    world.takeTurn(baby);
+
+    assertEquals("A stale message must not replace the remembered delivery destination", at(14, 5),
+        world.location);
+    assertEquals(20, world.rawCheese);
+  }
+
+  @Test
+  public void visibleKingTakesPriorityOverARemotePublication() throws Exception {
+    World world = new World(at(16, 5), Direction.EAST);
+    world.robots.add(king(101, Team.A, at(19, 5)));
+    world.shared[0] = 4;
+    world.shared[1] = 5;
+    world.shared[2] = 1;
+    world.rawCheese = 20;
+
+    world.takeTurn(new BabyRat(world.id));
+
+    assertEquals(20, world.delivered);
+    assertEquals(Arrays.asList(101), world.recipientIds);
+  }
+
+  @Test
+  public void stalePublicationLeavesTheExistingHomeScanInControl() throws Exception {
+    World world = new World(at(16, 5), Direction.EAST);
+    world.shared[0] = 4;
+    world.shared[1] = 5;
+    world.shared[2] = 1;
+    world.round = 10;
+    world.rawCheese = 20;
+
+    world.takeTurn(new BabyRat(world.id));
+
+    assertEquals(at(16, 5), world.location);
+    assertEquals(1, world.turns);
+    assertEquals(20, world.rawCheese);
+  }
+
+  @Test
+  public void freshRemoteHomeStartsDeliveryWithoutScanningForTheKing() throws Exception {
+    World world = new World(at(16, 5), Direction.EAST);
+    world.robots.add(king(101, Team.A, at(4, 5)));
+    world.shared[0] = 4;
+    world.shared[1] = 5;
+    world.shared[2] = 1;
+    world.rawCheese = 20;
+
+    world.takeTurn(new BabyRat(world.id));
+
+    assertEquals("A full carrier should travel toward the remote home immediately", at(15, 5),
+        world.location);
+    assertEquals(20, world.rawCheese);
+  }
+
+  @Test
+  public void freshPublicationUpdatesARememberedKingOutsideVision() throws Exception {
+    World world = new World(at(16, 5), Direction.EAST);
+    world.shared[0] = 4;
+    world.shared[1] = 5;
+    world.shared[2] = 1;
+    world.rawCheese = 20;
+    BabyRat baby = new BabyRat(world.id);
+    world.takeTurn(baby);
+    world.shared[1] = 12;
+    world.shared[2] = world.round / 2 + 1;
+
+    world.takeTurn(baby);
+
+    assertEquals("The next delivery step must use the king's updated location", at(14, 6),
+        world.location);
+    assertEquals(20, world.rawCheese);
+  }
+
+  @Test
   public void depositsTwentyWithoutWaitingForAnotherPile() throws Exception {
     int[] startingLoads = {0, 19, 20, 21};
     for (int cargo : startingLoads) {
@@ -215,6 +300,7 @@ public class CollectorTest {
         final List<MapLocation> pickups = new ArrayList<>();
         final List<MapLocation> transfers = new ArrayList<>();
         final List<Integer> recipientIds = new ArrayList<>();
+        final int[] shared = new int[GameConstants.SHARED_ARRAY_SIZE];
         final RobotController rc;
         MapLocation location;
         Direction direction;
@@ -298,6 +384,7 @@ public class CollectorTest {
                 case "getLocation": return location;
                 case "getDirection": return direction;
                 case "getRawCheese": return rawCheese;
+                case "readSharedArray": return shared[(Integer) args[0]];
                 case "isBeingCarried": case "isBeingThrown": return false;
                 case "isMovementReady": return movementReady;
                 case "canSenseLocation": return visible((MapLocation) args[0]);

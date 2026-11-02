@@ -130,26 +130,36 @@ public class BabyRat {
         return false;
     }
 
-    private void rememberKing(RobotController rc) throws GameActionException {
-        if (kingLocation != null && rc.canSenseLocation(kingLocation)) {
-            RobotInfo king = rc.senseRobotAtLocation(kingLocation);
-            if (king == null || king.getTeam() != rc.getTeam() || king.getType() != UnitType.RAT_KING) {
-                kingLocation = null;
-            } else {
-                kingLocation = king.getLocation();
-            }
-        }
-        int nearest = kingLocation == null ? Integer.MAX_VALUE : rc.getLocation().distanceSquaredTo(kingLocation);
-        for (RobotInfo robot : rc.senseNearbyRobots(-1, rc.getTeam())) {
-            if (robot.getType() == UnitType.RAT_KING) {
-                int distance = rc.getLocation().distanceSquaredTo(robot.getLocation());
-                if (distance <= nearest) {
-                    kingLocation = robot.getLocation();
-                    nearest = distance;
-                }
-            }
-        }
+  private void rememberKing(RobotController rc) throws GameActionException {
+    boolean locallyVerified = false;
+    if (kingLocation != null && rc.canSenseLocation(kingLocation)) {
+      RobotInfo king = rc.senseRobotAtLocation(kingLocation);
+      if (king == null || king.getTeam() != rc.getTeam() || king.getType() != UnitType.RAT_KING) {
+        kingLocation = null;
+      } else {
+        kingLocation = king.getLocation();
+        locallyVerified = true;
+      }
     }
+    int nearest = kingLocation == null
+        ? Integer.MAX_VALUE : rc.getLocation().distanceSquaredTo(kingLocation);
+    for (RobotInfo robot : rc.senseNearbyRobots(-1, rc.getTeam())) {
+      if (robot.getType() == UnitType.RAT_KING) {
+        int distance = rc.getLocation().distanceSquaredTo(robot.getLocation());
+        if (distance <= nearest) {
+          kingLocation = robot.getLocation();
+          nearest = distance;
+          locallyVerified = true;
+        }
+      }
+    }
+    if (!locallyVerified) {
+      MapLocation published = KingSignal.read(rc);
+      if (published != null) {
+        kingLocation = published;
+      }
+    }
+  }
 
     private void face(RobotController rc, MapLocation location) throws GameActionException {
         if (!rc.getLocation().equals(location)) {
