@@ -67,3 +67,52 @@ The two remote-delivery scenarios failed before wiring in this feature. The
 two reader-interruption scenarios also failed against the earlier full-bot
 protocol before adding the round guard. No retries, food policy, bites, traps,
 PvP or scouting changes are bundled with this extraction.
+
+## Isolated comparison - November 2, 2026
+
+- Tested candidate: `d66075361eca250e13a3187557e9e5ed91b521ca`.
+- Freshly fetched team main: `fc3b3ed27439f6844e770dada8302ea9800360ef`.
+- JDK 21, engine 1.2.6; DefaultSmall, DefaultMedium, DefaultLarge,
+  cheesefarm, minimaze, safelycontained and pipes, both starting sides and
+  one fixed seed per map. All **14/14 games completed**.
+- Clean **37 tests** pass (36 team scenarios and one example test), as does
+  the engine verifier. Later evidence commits leave the tested bot unchanged.
+
+| Measurement | Home signal | Main |
+| --- | ---: | ---: |
+| Wins | 10 | 4 |
+| Deliveries at actual match ends | 100,500 | 57,600 |
+| Deliveries at round 1,000 (10 games reach it) | 54,980 | 32,080 |
+
+Five outcomes are coin flips: this bot wins three and main wins two. Excluding
+those outcomes, the result is **7-2**. Main still wins DefaultLarge-A by king
+destruction and minimaze-A on points; minimaze-A deliveries are 3,760 / 3,840.
+Both pipes games end at round 155 with zero deliveries, so their coin-flip wins
+do not demonstrate a collection benefit.
+
+The fixed-round delivery gain is **71.4%** in the ten-game round-1,000 cohort.
+Actual-end totals combine different match lengths. These controlled results
+support better home guidance against this recorded main, not a general win
+rate or proof of economic strength against the stronger opponent pool. That
+pool was not rerun for this extraction. King food and spending policies are
+still the baseline policies.
+
+All recorded replay checkpoints are cooperative. These sampled states do not
+establish behavior after a PvP transition or against combat-enabled opponents.
+
+A local replay audit records zero candidate exception deaths and zero turns
+at or above the applicable unit bytecode limit; the maximum recorded candidate
+turn uses 5,594 bytecodes. This is a budget check, not a before/after performance
+claim. All 28 log/replay hashes match the run manifest.
+
+The [per-game CSV](king-home-signal-results.csv) records both sides' final
+metrics and seeds. Source/JAR hashes, raw checkpoint CSV, logs, replays and the
+auxiliary audit remain locally in `matches/sprint2-fresh-home-20261102/`;
+generated files are not part of a clone. The full checkpoint CSV has SHA-256
+`f90a9630ed1f54a7bc055363e79745b32e1e043577bea7d2a68bfcb82babf60f`.
+
+To repeat with JDK 21 and Python 3.10+:
+
+```powershell
+.\gradlew.bat sim -PsimPreset=full -PsimCandidate=d66075361eca250e13a3187557e9e5ed91b521ca -PsimBaseline=fc3b3ed27439f6844e770dada8302ea9800360ef -PsimOffline=true
+```
