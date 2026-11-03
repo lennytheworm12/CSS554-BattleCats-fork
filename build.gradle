@@ -4,6 +4,7 @@ import java.util.concurrent.TimeUnit
 
 apply plugin: 'java'
 apply plugin: 'scala'
+apply plugin: 'jacoco'
 
 // Optional override for local workspaces with synced build outputs.
 if (project.hasProperty('localBuildDir')) {
@@ -233,6 +234,50 @@ dependencies {
   implementation group: 'org.scala-lang', name: 'scala-library', version: '2.13.11'
   testImplementation group: 'org.scalatest', name: 'scalatest_2.13', version: '3.2.9'
 }
+
+
+//////// Unit tests and coverage ////////
+
+jacoco {
+  // Pinned for reproducible reports; this release supports Java 21 class files.
+  toolVersion = '0.8.12'
+}
+
+// Measure the complete submitted team package, including untested classes.
+// Bundled example opponents and engine dependencies are not our production code.
+def teamClassFiles = sourceSets.main.output.classesDirs.asFileTree.matching {
+  include 'battlecats/**/*.class'
+}
+
+jacocoTestReport {
+  dependsOn test
+  classDirectories.setFrom(teamClassFiles)
+  sourceDirectories.setFrom(files('src'))
+  reports {
+    html.required = true
+    xml.required = true
+    csv.required = false
+  }
+}
+
+jacocoTestCoverageVerification {
+  dependsOn test
+  classDirectories.setFrom(teamClassFiles)
+  violationRules {
+    rule {
+      element = 'BUNDLE'
+      limit {
+        counter = 'LINE'
+        value = 'COVEREDRATIO'
+        // Sprint 2 requires strictly more than 20%; 21% provides a clear margin.
+        minimum = 0.21
+      }
+    }
+  }
+}
+
+test.finalizedBy jacocoTestReport
+check.dependsOn jacocoTestReport, jacocoTestCoverageVerification
 
 
 //////// Client ////////
