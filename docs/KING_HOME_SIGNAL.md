@@ -71,12 +71,21 @@ PvP or scouting changes are bundled with this extraction.
 ## Isolated comparison - November 2, 2026
 
 - Tested candidate: `d66075361eca250e13a3187557e9e5ed91b521ca`.
-- Freshly fetched team main: `fc3b3ed27439f6844e770dada8302ea9800360ef`.
+- Recorded team-main baseline: `fc3b3ed27439f6844e770dada8302ea9800360ef`.
 - JDK 21, engine 1.2.6; DefaultSmall, DefaultMedium, DefaultLarge,
   cheesefarm, minimaze, safelycontained and pipes, both starting sides and
   one fixed seed per map. All **14/14 games completed**.
 - Clean **37 tests** pass (36 team scenarios and one example test), as does
   the engine verifier. Later evidence commits leave the tested bot unchanged.
+
+Before publication, main advanced to `6f1d01e6b7df5ecc905478456e8492477ce510a4`
+by merging coverage PR #10. This branch includes that merge. Main's bot code
+and tests are identical to the recorded baseline; the candidate's bot code
+and tests are identical to the tested candidate. The 14 games below are
+historical results against the recorded revision, not a new simulation after
+the coverage merge. A fresh clean `test jacocoTestReport
+jacocoTestCoverageVerification verify` passes all 37 tests, the 21% gate and
+engine verification: **217/239 production lines covered (90.79%)**.
 
 | Measurement | Home signal | Main |
 | --- | ---: | ---: |
